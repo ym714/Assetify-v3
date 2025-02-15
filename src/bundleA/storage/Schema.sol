@@ -22,6 +22,7 @@ library Schema {
 
     struct Project {
         uint256 projectId;
+        uint256 tokenId;
         address borrower;
         uint256 targetAmount;
         uint256 interestRate;
@@ -41,12 +42,12 @@ library Schema {
 
     struct ARCS {
         uint256 tokenId;
-        address holder;
         uint256 projectId;
         uint256 amount;
         uint256 issuedAt;
         uint256 maturityDate;
         uint256 annualInterestRate;
+        address contractAddress;
         TokenStatus status;
     }
 

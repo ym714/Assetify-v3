@@ -3,11 +3,14 @@ pragma solidity ^0.8.23;
 
 import "../storage/Schema.sol";
 import "../storage/Storage.sol";
+import "../../ARCSToken.sol";
+
+
 
 contract EarlyRedemption {
     function executeEarlyRedemption(uint256 projectId, uint256 amount) external {
         Schema.GlobalState storage $s = Storage.state();
-        uint256 tokenId = findInvestorTokenId(msg.sender);
+        uint256 tokenId = findInvestorTokenId(msg.sender, projectId);
 
         require(tokenId != 0, "Token not found");
         require($s.arcsTokens[tokenId].amount >= amount, "Insufficient ARCS balance");
@@ -27,13 +30,22 @@ contract EarlyRedemption {
         payable(msg.sender).transfer(redemptionAmount);
     }
 
-    function findInvestorTokenId(address investor) internal view returns (uint256) {
+
+    function findInvestorTokenId(address investor, uint256 projectId) internal view returns (uint256 tokenId) {
         Schema.GlobalState storage $s = Storage.state();
+        uint256 projectTokenId = $s.projects[projectId].tokenId;
+        address tokenAddress = $s.arcsTokens[projectTokenId].contractAddress;
+        
         for (uint256 i = 0; i < $s.nextTokenId; i++) {
-            if ($s.arcsTokens[i].holder == investor) {
-                return i;
+            ARCS arcsToken = ARCS(tokenAddress);
+            address[] memory holders = arcsToken.getHolders();
+            
+            for (uint256 j = 0; j < holders.length; j++) {
+                if (holders[j] == investor) {
+                    return i;
+                }
             }
         }
-        return 0;
+        revert("Token not found");
     }
 }

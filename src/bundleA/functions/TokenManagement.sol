@@ -3,22 +3,42 @@ pragma solidity ^0.8.23;
 
 import "../storage/Schema.sol";
 import "../storage/Storage.sol";
+import "@openzeppelin/token/ERC20/ERC20.sol";
+import "../../ARCSToken.sol";
 
 contract TokenManagement {
-    function issueTokens(address investor, uint256 usdtAmount, uint256 projectId) internal {
+    event TokenIssued(uint256 tokenId, address tokenAddress, address investor, uint256 amount);
+
+    function issueTokens(
+        address investor,
+        uint256 usdtAmount,
+        uint256 projectId
+    ) external payable {
+        require(msg.value > 0, "Native token payment required");
+        require(usdtAmount >= msg.value, "usdtAmount must be equal or greater than native token value sent");
+
         Schema.GlobalState storage $s = Storage.state();
         uint256 tokenId = $s.nextTokenId++;
+        $s.projects[projectId].tokenId = tokenId;
+        require($s.projects[projectId].tokenId==0,"there is already token");
+
+        ARCS token = new ARCS("ARCS", "ARCS");//発行されるtokenとnameは企業が決めたらいいと思う
+        token.mint(investor, usdtAmount);
+
+        uint256 interestRate = $s.projects[projectId].interestRate;
 
         $s.arcsTokens[tokenId] = Schema.ARCS({
             tokenId: tokenId,
-            holder: investor,
             projectId: projectId,
             amount: usdtAmount,
             issuedAt: block.timestamp,
             maturityDate: block.timestamp + 365 days, // 1年満期
-            annualInterestRate: 1000, // 10% の利回り
-            status: Schema.TokenStatus.Active
+            annualInterestRate: interestRate,
+            status: Schema.TokenStatus.Active,
+            contractAddress: address(token)
         });
+
+        emit TokenIssued(tokenId, address(token), investor, usdtAmount);
     }
 
     function calculateInterest(address investor, uint256 projectId) public view returns (uint256) {
@@ -33,7 +53,8 @@ contract TokenManagement {
     function burnTokens(address investor, uint256 amount) internal {
         Schema.GlobalState storage $s = Storage.state();
         uint256 tokenId = findInvestorTokenId(investor);
-        require(tokenId != 0, "Token not found");
+        address tokenAddress = $s.arcsTokens[tokenId].contractAddress;
+        ARCS(tokenAddress).burn(investor, amount);
 
         $s.arcsTokens[tokenId].amount -= amount;
         if ($s.arcsTokens[tokenId].amount == 0) {
@@ -41,13 +62,20 @@ contract TokenManagement {
         }
     }
 
-    function findInvestorTokenId(address investor) internal view returns (uint256) {
+    function findInvestorTokenId(address investor) internal view returns (uint256 tokenId) {
         Schema.GlobalState storage $s = Storage.state();
+        
         for (uint256 i = 0; i < $s.nextTokenId; i++) {
-            if ($s.arcsTokens[i].holder == investor) {
-                return i;
+            address tokenAddress = $s.arcsTokens[i].contractAddress;
+            ARCS arcsToken = ARCS(tokenAddress);
+            address[] memory holders = arcsToken.getHolders();
+            
+            for (uint256 j = 0; j < holders.length; j++) {
+                if (holders[j] == investor) {
+                    return i;
+                }
             }
         }
-        return 0;
+        revert("Token not found");
     }
 }

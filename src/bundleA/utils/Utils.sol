@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
+import "../storage/Schema.sol";
+import "../storage/Storage.sol";
+
+
 
 contract Utils {
     function convertToStable(address cryptoAsset, uint256 cryptoAmount) public pure returns (uint256) {

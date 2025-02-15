@@ -77,8 +77,8 @@ contract AssetifyMeta {
         uint256 projectId,
         address cryptoAsset,
         uint256 cryptoAmount
-    ) external {
-        investmentManagement.invest(projectId, cryptoAsset, cryptoAmount);
+    ) external payable {
+        investmentManagement.invest(projectId, cryptoAsset, msg.value);
         emit InvestmentMade(projectId, msg.sender, cryptoAmount);
     }
 

@@ -16,6 +16,7 @@ contract ProjectManagement {
 
         $s.projects[projectId] = Schema.Project({
             projectId: projectId,
+            tokenId: 0,//ai:ここはissuTokenでtokenIdが付く。 プロジェクト作るタイミングでトークンの発行もした方がいいと思う
             borrower: borrower,
             targetAmount: targetAmount,
             interestRate: interestRate,
