@@ -38,4 +38,17 @@ contract P2PMarket {
         payable(order.seller).transfer(order.price);
         order.isActive = false;
     }
+
+    function cancelOrder(uint256 orderId) external {
+        Order storage order = orders[orderId];
+        require(order.seller == msg.sender, "Only seller can cancel");
+        require(order.isActive, "Order is not active");
+
+        order.isActive = false;
+    }
+
+    // 構造体を返すビューメソッドを追加
+    function getOrder(uint256 orderId) external view returns (Order memory) {
+        return orders[orderId];
+    }
 }
