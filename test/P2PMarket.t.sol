@@ -4,9 +4,11 @@ pragma solidity ^0.8.23;
 import "forge-std/Test.sol";
 import "../src/bundleA/functions/P2PMarket.sol";
 import "../src/bundleA/storage/Storage.sol";
+import "../src/bundleA/utils/Utils.sol";
 
 contract P2PMarketTest is Test {
     P2PMarket market;
+    Utils utils;
     address admin = address(0x1);
     address seller = address(0x2);
     address buyer = address(0x3);
@@ -14,12 +16,23 @@ contract P2PMarketTest is Test {
 
     function setUp() public {
         vm.startPrank(admin);
+
+        // コントラクトのデプロイ
         market = new P2PMarket();
+        utils = new Utils();
 
         // テスト用のARCSトークンを設定
         Schema.GlobalState storage $s = Storage.state();
-        tokenId = $s.nextTokenId++;
 
+        // プロトコル設定の初期化
+        Storage.initialize(
+            address(0x1234), // USDT
+            address(0x5678), // USDC
+            admin            // Oracle
+        );
+
+        // テストトークンの作成
+        tokenId = $s.nextTokenId++;
         $s.arcsTokens[tokenId] = Schema.ARCS({
             tokenId: tokenId,
             holder: seller,
@@ -28,9 +41,11 @@ contract P2PMarketTest is Test {
             issuedAt: block.timestamp,
             maturityDate: block.timestamp + 365 days,
             annualInterestRate: 1000, // 10%
-            status: Schema.TokenStatus.Active
+            status: Schema.TokenStatus.Active,
+            isTransferRestricted: false
         });
 
+        market.unpause();
         vm.stopPrank();
     }
 
@@ -41,24 +56,12 @@ contract P2PMarketTest is Test {
         uint256 price = 100 ether;
         market.createSellOrder(tokenId, amount, price);
 
-        P2PMarket.Order memory order = market.getOrder(0);
+        Schema.Order memory order = market.getOrderHistory(0);
         assertEq(order.seller, seller);
         assertEq(order.tokenId, tokenId);
         assertEq(order.amount, amount);
         assertEq(order.price, price);
         assertTrue(order.isActive);
-
-        vm.stopPrank();
-    }
-
-    function testCancelSellOrder() public {
-        vm.startPrank(seller);
-
-        market.createSellOrder(tokenId, 50 ether, 100 ether);
-        market.cancelSellOrder(0);
-
-        P2PMarket.Order memory order = market.getOrder(0);
-        assertFalse(order.isActive);
 
         vm.stopPrank();
     }
@@ -84,8 +87,20 @@ contract P2PMarketTest is Test {
         assertEq($s.arcsTokens[newTokenId].amount, amount);
 
         // 売り注文が無効化されていることを確認
-        P2PMarket.Order memory order = market.getOrder(0);
+        Schema.Order memory order = market.getOrderHistory(0);
         assertFalse(order.isActive);
+    }
+
+    function testCancelOrder() public {
+        vm.startPrank(seller);
+
+        market.createSellOrder(tokenId, 50 ether, 100 ether);
+        market.cancelOrder(0);
+
+        Schema.Order memory order = market.getOrderHistory(0);
+        assertFalse(order.isActive);
+
+        vm.stopPrank();
     }
 
     function testGetActiveOrders() public {
@@ -96,23 +111,27 @@ contract P2PMarketTest is Test {
         market.createSellOrder(tokenId, 20 ether, 40 ether);
 
         // 1つをキャンセル
-        market.cancelSellOrder(0);
+        market.cancelOrder(0);
 
         vm.stopPrank();
 
         // アクティブな注文のみ取得
-        P2PMarket.Order[] memory orders = market.getActiveOrders();
+        Schema.Order[] memory orders = market.getActiveOrders();
         assertEq(orders.length, 1);
         assertEq(orders[0].amount, 20 ether);
     }
 
-    function testSetFeeRate() public {
-        vm.prank(admin);
-        uint256 newRate = 100; // 1%
+    function testCleanupExpiredOrders() public {
+        vm.startPrank(seller);
+        market.createSellOrder(tokenId, 50 ether, 100 ether);
+        vm.stopPrank();
 
-        market.setFeeRate(newRate);
+        // 7日後にスキップ
+        vm.warp(block.timestamp + 8 days);
+        market.cleanupExpiredOrders();
 
-        assertEq(market.feeRate(), newRate);
+        Schema.Order memory order = market.getOrderHistory(0);
+        assertFalse(order.isActive);
     }
 
     function testFail_CreateSellOrderNotOwner() public {
@@ -120,12 +139,24 @@ contract P2PMarketTest is Test {
         market.createSellOrder(tokenId, 50 ether, 100 ether);
     }
 
-    function testFail_CancelSellOrderNotSeller() public {
+    function testFail_CancelOrderNotSeller() public {
         vm.prank(seller);
         market.createSellOrder(tokenId, 50 ether, 100 ether);
 
         vm.prank(buyer);
-        market.cancelSellOrder(0);
+        market.cancelOrder(0);
+    }
+
+    function testFail_ExecutePurchaseExpiredOrder() public {
+        vm.prank(seller);
+        market.createSellOrder(tokenId, 50 ether, 100 ether);
+
+        // 7日後にスキップ
+        vm.warp(block.timestamp + 8 days);
+
+        vm.deal(buyer, 100 ether);
+        vm.prank(buyer);
+        market.executePurchase{value: 100 ether}(0);
     }
 
     function testFail_ExecutePurchaseInvalidAmount() public {
@@ -137,13 +168,14 @@ contract P2PMarketTest is Test {
         market.executePurchase{value: 90 ether}(0);
     }
 
-    function testFail_SetFeeRateNotAdmin() public {
+    function testPause() public {
+        vm.prank(admin);
+        market.pause();
+
         vm.prank(seller);
-        market.setFeeRate(100);
+        vm.expectRevert("Pausable: paused");
+        market.createSellOrder(tokenId, 50 ether, 100 ether);
     }
 
-    function testFail_SetInvalidFeeRate() public {
-        vm.prank(admin);
-        market.setFeeRate(1100); // 11% は無効
-    }
+    receive() external payable {}
 }

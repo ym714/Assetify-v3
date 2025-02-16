@@ -4,6 +4,8 @@ out = "out"
 libs = ["lib"]
 remappings = [
     "forge-std/=lib/forge-std/src/",
-    "@openzeppelin/=lib/openzeppelin-contracts/contracts/"
+    "@openzeppelin/=lib/openzeppelin-contracts/"
 ]
 auto_detect_remappings = true
+optimizer = true
+optimizer_runs = 200
